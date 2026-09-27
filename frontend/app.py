@@ -6,7 +6,12 @@ import streamlit as st
 # CONFIG
 # =========================================================
 
-API_URL = "http://127.0.0.1:8000/api/v1/question"
+import os
+
+API_URL = os.getenv(
+    "API_URL",
+    "http://127.0.0.1:8000/api/v1/question"
+)
 
 st.set_page_config(
     page_title="DataDose",
