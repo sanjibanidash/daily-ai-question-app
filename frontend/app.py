@@ -1,8 +1,9 @@
-import streamlit as st
-from openai import OpenAI
 import os
 import time
-from datetime import date
+
+import requests
+import streamlit as st
+from dotenv import load_dotenv
 
 
 # =========================================================
@@ -17,26 +18,24 @@ st.set_page_config(
 
 
 # =========================================================
-# OPENAI CLIENT
+# BACKEND API CONFIGURATION
 # =========================================================
-
-from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.getenv("OPENAI_API_KEY")
+backend_url = os.getenv("BACKEND_URL")
 
-if not api_key:
+if not backend_url:
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]
+        backend_url = st.secrets["BACKEND_URL"]
     except Exception:
-        api_key = None
+        backend_url = None
 
-if not api_key:
-    st.error("OPENAI_API_KEY is not configured.")
+if not backend_url:
+    st.error("BACKEND_URL is not configured.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+QUESTION_API_URL = f"{backend_url.rstrip('/')}/api/v1/question"
 
 
 # =========================================================
@@ -128,9 +127,7 @@ st.markdown(
         margin-bottom: 8px;
     }
 
-    /* IMPORTANT:
-       Explicitly make radio text visible.
-    */
+    /* Make radio text visible */
 
     div[data-testid="stRadio"] label {
         color: #20325f !important;
@@ -229,7 +226,10 @@ st.markdown(
 # HEADER
 # =========================================================
 
-st.markdown('<div class="logo">✦</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="logo">✦</div>',
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     '<div class="brand">DataDose</div>',
@@ -287,74 +287,19 @@ difficulty = st.radio(
 
 def generate_question(difficulty: str):
 
-    today = date.today().isoformat()
-
-    prompt = f"""
-You are generating one daily Data Science interview question.
-
-Date: {today}
-Difficulty: {difficulty}
-
-The question must be suitable for a Data Science student preparing
-for junior Data Scientist / Data Analyst interviews.
-
-Difficulty rules:
-
-EASY:
-- Basic concepts
-- Simple reasoning
-- Suitable for a beginner
-- Example areas: Python, SQL, statistics, ML basics
-
-MEDIUM:
-- Requires reasoning and application
-- Should connect concepts to a realistic situation
-- Example areas: feature engineering, SQL logic, model evaluation,
-  statistics, data cleaning
-
-HARD:
-- Requires deeper reasoning
-- Should resemble a real interview discussion
-- May involve trade-offs, debugging, modeling decisions,
-  experiment design, production or business reasoning
-
-IMPORTANT:
-- Generate EXACTLY ONE question.
-- Do not provide the answer.
-- Do not provide explanation.
-- Do not provide multiple questions.
-- Do not number the question.
-- Do not add "Question:" before it.
-- Keep it concise enough to fit naturally in a question card.
-"""
-
-    response = client.responses.create(
-        model="gpt-5.6-luna",
-        input=prompt,
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "daily_question",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string"
-                        },
-                        "difficulty": {
-                            "type": "string",
-                            "enum": ["Easy", "Medium", "Hard"]
-                        }
-                    },
-                    "required": ["question", "difficulty"],
-                    "additionalProperties": False
-                }
-            }
-        }
+    response = requests.post(
+        QUESTION_API_URL,
+        json={
+            "difficulty": difficulty
+        },
+        timeout=60,
     )
 
-    return response.output_text
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data["question"], data["difficulty"]
 
 
 # =========================================================
@@ -369,28 +314,49 @@ if st.button("✦  Generate Today's Question"):
 
         try:
 
-            raw_response = generate_question(difficulty)
+            question, returned_difficulty = generate_question(difficulty)
 
-            import json
-
-            data = json.loads(raw_response)
-
-            question = data["question"].strip()
-            returned_difficulty = data["difficulty"]
+            question = question.strip()
 
             if not question:
-                st.error("The AI returned an empty question.")
+                st.error("The backend returned an empty question.")
                 st.stop()
 
             st.session_state["question"] = question
+
             st.session_state["difficulty"] = returned_difficulty
+
             st.session_state["generation_time"] = (
                 time.time() - start_time
             )
 
+        except requests.exceptions.ConnectionError:
+
+            st.error(
+                "Could not connect to the DataDose backend. "
+                "Make sure FastAPI is running."
+            )
+
+        except requests.exceptions.Timeout:
+
+            st.error(
+                "The backend took too long to respond. "
+                "Please try again."
+            )
+
+        except requests.exceptions.HTTPError as e:
+
+            st.error(
+                "The DataDose backend returned an error."
+            )
+
+            st.code(str(e))
+
         except Exception as e:
 
-            st.error("Something went wrong while generating the question.")
+            st.error(
+                "Something went wrong while generating the question."
+            )
 
             st.code(str(e))
 
@@ -407,7 +373,9 @@ if "question" in st.session_state:
     )
 
     question = st.session_state["question"]
+
     question_difficulty = st.session_state["difficulty"]
+
     generation_time = st.session_state["generation_time"]
 
     st.markdown(
