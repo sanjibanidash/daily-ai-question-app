@@ -10,7 +10,12 @@ client = OpenAI(
 )
 
 
-def generate_question(difficulty: str) -> str:
+from typing import Optional
+
+def generate_question(
+    difficulty: str,
+    topic: Optional[str] = None,
+) -> str:
 
     prompt = f"""
 You are an expert Data Science and AI technical interviewer.
@@ -19,6 +24,13 @@ Your job is to generate ONE high-quality interview question for a
 learner preparing for Data Science and AI interviews.
 
 Difficulty level: {difficulty}
+
+Selected topic: {topic or "Automatic"}
+
+Topic rules:
+- If a specific topic is selected, generate the question about that topic only.
+- If the topic is Automatic, choose a suitable topic using the existing instructions.
+- Follow all existing difficulty and output rules.
 
 IMPORTANT:
 Difficulty must be determined by the amount of reasoning required,
